@@ -104,7 +104,16 @@ mkdir -p out/pdx203/tree/.cache/firmware/kernelcache.macho
 cp "$(find out -name kernelcache.decompressed -print -quit)" out/pdx203/tree/.cache/firmware/kernelcache.macho/kernelcache.release.ipad7.decompressed
 ```
 
-then `defconfig=pdx203-full_defconfig` with `unixnu_ref=pdx203`. the payload for it adds `--kernel-arg native-ufs-root=1 --kernel-arg sheng-pmgr=2`, the payload step refuses `native-ufs-root=1` on a kernel without the linked pmgr publication.
+then `defconfig=pdx203-full_defconfig` with `unixnu_ref=pdx203`. green run: https://github.com/chardidathing/UniXNU-pdx203/actions/runs/39778345145, `kernel.macho` sha256 `5ff8a577f4136c7fbb60ec336792e533795689e010e13574af090e7c744a623b`, 51953664 bytes, 13 archive steps (corecrypto, ArmDTPlatform, ArmCpu, the stubs, NativeAES and its recorded bindings, the storage headers, NativeUfs and its original bindings, mockfs, the pmgr publication, pthread).
+
+what makes it link without sheng's owner-root inputs, all from the uke port:
+
+- `build-arm-driver.py NativeUfs --unverified` compiles the transport without `NATIVE_VERIFIED_BLOCK`, so the verified-root policy bundle (made from the real OS/SystemOS images on a mac) is not needed. reads stay unauthenticated
+- `build-ufs-original-bindings.py` binds `NativeUfsBlock` to the original `IOBlockStorageDevice` of the prelinked candidate (11 bindings, 176 kernel method bindings over 190 slots). sheng gets the same bindings from the virtio verified bundle and a live storage snapshot
+- `native-ufs-allow-unverified=1` lets the driver publish the OS and SystemOS windows without the owner policy (the stock driver refuses root publication in every build without it) and resolves the SystemOS volume by uuid for the owner mount
+- a weak `boot_progress_poll` in `package/Pdx203Stubs.c`, the root path calls it and the boot progress layer is not linked
+
+the payload for it adds `--kernel-arg native-ufs-root=1 --kernel-arg sheng-pmgr=2 --kernel-arg native-ufs-allow-unverified=1`, the payload step refuses `native-ufs-root=1` on a kernel without the linked pmgr publication.
 
 why the pmgr: `CONFIG_XNU_SHENG_PMGR` links `package/Pdx203PlatformPower.cpp` and the base patch `sheng-platform-power.patch` calls `sheng_pmgr_run()` from `bsd_init`. with `sheng-pmgr=2` it loads the kernelcache's own `com.apple.driver.ApplePMGR`, instantiates the original class with an empty description and publishes an `ApplePMGRNub`, because the unchanged AppleMobileFileIntegrity panics `No PMGR` when it starts without one. nothing in it is sheng hardware, it binds to addresses of the pinned kernelcache, so the pdx203 copy is the sheng source with the file renamed. the names `sheng_pmgr_run` and `sheng-pmgr` are the vocabulary of the base patch and the payload check and stay.
 

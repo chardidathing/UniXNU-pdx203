@@ -30,7 +30,7 @@ build with the `unixnu` driver of [UniXNU](https://github.com/UniXNU/UniXNU) (th
 | 3 payload | the payload step runs on a mac, nothing booted yet |
 | 4 darwinboot | nothing booted yet |
 | 5 kernel entry | `pdx203_defconfig` builds and prelinks in ci ([run 39767686297](https://github.com/chardidathing/UniXNU-pdx203/actions/runs/39767686297)), not booted |
-| 6 storage and root | `pdx203-full_defconfig` links NativeUfs on the sm8250 host and the pmgr publication, needs a first-console pass first, not booted |
+| 6 storage and root | `pdx203-full_defconfig` links NativeUfs on the sm8250 host, NativeAES and the pmgr publication in ci ([run 39778345145](https://github.com/chardidathing/UniXNU-pdx203/actions/runs/39778345145)), after a first-console pass, not booted |
 | 7 userland | not started |
 
 ## layout
@@ -45,10 +45,11 @@ build with the `unixnu` driver of [UniXNU](https://github.com/UniXNU/UniXNU) (th
 | `scripts/build-pdx203-archives.py` | the one archive builder board.toml lists, picks the builders from the selected flags |
 | `scripts/build-pdx203-stubs.py`, `package/Pdx203Stubs.c` | weak `native_legacy_display_probe` for a kernel without the sheng display archive |
 | `scripts/build-pdx203-platform-power.py`, `package/Pdx203PlatformPower.cpp` | the original ApplePMGR publication the unchanged amfi needs before a native ufs root |
-| `scripts/build-arm-driver.py` | sheng's platform driver builder with the pdx203 include path |
+| `scripts/build-arm-driver.py` | sheng's platform driver builder with the pdx203 include path and uke's `--unverified` NativeUfs mode |
+| `scripts/build-ufs-original-bindings.py` | uke's binder of NativeUfsBlock to the candidate's original IOBlockStorageDevice |
 | `scripts/check-pdx203.py` | the firmware preflight of uefi-pdx203, run by `unixnu build firmware` |
 | `.github/workflows/macos-kernel.yml` | the kernel step of UniXNU's macos workflow, run from here |
-| `drivers/NativeUfs` | sheng's NativeUfs on the kona gcc offsets, `qcom,sm8250-ufshc`, smmu stream from the adt |
+| `drivers/NativeUfs` | sheng's NativeUfs on the kona gcc offsets, `qcom,sm8250-ufshc`, smmu stream from the adt, uke's unverified bring-up mode |
 
 ## build
 
@@ -88,7 +89,7 @@ open inputs: the `[firmware]` block, the uefi memory map (which decides the darw
 | --- | --- | --- |
 | touch | ❌ | samsung sec_ts on geni se13, i2c 0x48, not ported |
 | display | ❌ | command mode panel, the firmware kicks autorefresh, no xnu display provider yet |
-| ufs | ⚠️ | NativeUfs builds for the sm8250 host, not run |
+| ufs | ⚠️ | NativeUfs builds for the sm8250 host as the unverified bring-up transport, not run |
 | wi-fi | ❌ | |
 | bluetooth | ❌ | |
 | camera | ❌ | |
