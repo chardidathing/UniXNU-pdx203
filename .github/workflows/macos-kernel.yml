@@ -75,6 +75,24 @@ jobs:
                           corecrypto-2023 IOStorageFamily -D "$GITHUB_WORKSPACE/device"
           ./unixnu status -D "$GITHUB_WORKSPACE/device"
 
+      - name: seed the apple header listings
+        # prepare-xnu-source.py reads three github contents listings unauthenticated, which the shared
+        # runner address rate limits (403). the same listings through the job token, into the cache the
+        # script checks first. the header blobs themselves come from raw.githubusercontent.com.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ./unixnu tree -D "$GITHUB_WORKSPACE/device"
+          board=$(python3 -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('device/board.toml').read_text())['board']['name'])")
+          sources="out/$board/tree/.cache/sources"
+          mkdir -p "$sources"
+          driverkit=$(python3 -c "import tomllib,pathlib; print([s for s in tomllib.loads(pathlib.Path('feeds.toml').read_text())['source'] if s['name']=='xnu'][0]['driverkit_tag'])")
+          trust=$(python3 -c "import tomllib,pathlib; print([s for s in tomllib.loads(pathlib.Path('feeds.toml').read_text())['source'] if s['name']=='xnu'][0]['trustcache_tag'])")
+          gh api "repos/apple-oss-distributions/xnu/contents/iokit/DriverKit?ref=$driverkit" > "$sources/xnu-driverkit-${driverkit#xnu-}.json"
+          gh api "repos/apple-oss-distributions/xnu/contents/iokit/DriverKit/crypto?ref=$driverkit" > "$sources/xnu-driverkit-crypto-${driverkit#xnu-}.json"
+          gh api "repos/apple-oss-distributions/xnu/contents/EXTERNAL_HEADERS/TrustCache?ref=$trust" > "$sources/xnu-trustcache-${trust#xnu-}.json"
+          ls -l "$sources"
+
       - name: run pre-build steps
         if: inputs.pre_build != ''
         env:
