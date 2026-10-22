@@ -1,0 +1,101 @@
+name: macOS kernel
+
+# the kernel step of UniXNU's "macOS build" workflow (.github/workflows/macos.yml there), run from this
+# repository against a UniXNU checkout, with the same tools, the same fetch set and the same artifact
+# layout. dispatch only, the xnu build is never started by a push. a fork of UniXNU lists its workflows
+# only after a push to its default branch, this one needs no such step.
+
+on:
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: defconfig name
+        required: true
+        default: pdx203_defconfig
+      unixnu_repository:
+        description: UniXNU repository as owner/name
+        required: true
+        default: chardidathing/UniXNU
+      unixnu_ref:
+        description: UniXNU ref
+        required: true
+        default: main
+      pre_build:
+        description: optional shell commands run in the UniXNU checkout before the kernel build, the device repository is at DEVICE_DIR
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-kernel-${{ github.ref }}-${{ inputs.defconfig }}
+  cancel-in-progress: true
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+
+jobs:
+  kernel:
+    runs-on: macos-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.unixnu_repository }}
+          ref: ${{ inputs.unixnu_ref }}
+
+      - uses: actions/checkout@v4
+        with:
+          path: device
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: report the runner toolchain
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+          xcode-select -p
+          xcrun --sdk iphoneos --find mig || echo 'mig not found for iphoneos'
+
+      - name: install host tools
+        run: |
+          brew install cmake ninja unifdef llvm mtools dtc
+          echo "$(brew --prefix llvm)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix unifdef)/bin" >> "$GITHUB_PATH"
+
+      - name: select the device
+        run: |
+          ./unixnu defconfig "${{ inputs.defconfig }}" -D "$GITHUB_WORKSPACE/device"
+          ./unixnu fetch xnu libplatform libdispatch AvailabilityVersions libpthread \
+                          corecrypto-2023 IOStorageFamily -D "$GITHUB_WORKSPACE/device"
+          ./unixnu status -D "$GITHUB_WORKSPACE/device"
+
+      - name: run pre-build steps
+        if: inputs.pre_build != ''
+        env:
+          PRE_BUILD: ${{ inputs.pre_build }}
+          DEVICE_DIR: ${{ github.workspace }}/device
+        run: bash -euo pipefail -c "$PRE_BUILD"
+
+      - name: build kernel
+        run: ./unixnu build kernel
+
+      - name: upload kernel
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unixnu-${{ inputs.defconfig }}
+          path: |
+            out/*/kernel/**
+            out/*/logs/**
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: remove proprietary inputs
+        if: always()
+        run: rm -rf out/ipsw out/feeds device/.cache/firmware out/*/tree/.cache/firmware
