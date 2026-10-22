@@ -17,7 +17,7 @@ the port follows the sheng and uke device repositories. the hardware facts come 
 - [build](https://unixnu.com/building)
 - [bring-up notes](docs/bring-up.md), the staged plan for this phone and what each stage prints
 
-firmware: [uefi-pdx203](https://github.com/chardidathing/uefi-pdx203), the mu-silicium port, written in parallel. the `[firmware]` block of `board.toml` is a placeholder until it lands.
+firmware: [uefi-pdx203](https://github.com/chardidathing/uefi-pdx203), the mu-silicium port (branch `pdx203`). its `[firmware]` block, preflight and boot image rule are in `board.toml`.
 
 build with the `unixnu` driver of [UniXNU](https://github.com/UniXNU/UniXNU) (the fork [chardidathing/UniXNU](https://github.com/chardidathing/UniXNU) runs the macos workflow). clone with `--recurse-submodules`.
 
@@ -25,11 +25,11 @@ build with the `unixnu` driver of [UniXNU](https://github.com/UniXNU/UniXNU) (th
 
 | stage | state |
 | --- | --- |
-| 1 uefi firmware | in progress in uefi-pdx203 |
+| 1 uefi firmware | built in uefi-pdx203, not booted |
 | 2 unixnu menu | waits for 1 |
 | 3 payload | the payload step runs on a mac, nothing booted yet |
 | 4 darwinboot | nothing booted yet |
-| 5 kernel entry | `pdx203_defconfig` builds and prelinks in the macos workflow, not booted |
+| 5 kernel entry | `pdx203_defconfig` builds and prelinks in ci ([run 39767686297](https://github.com/chardidathing/UniXNU-pdx203/actions/runs/39767686297)), not booted |
 | 6 storage and root | `pdx203-full_defconfig` links NativeUfs on the sm8250 host and the pmgr publication, needs a first-console pass first, not booted |
 | 7 userland | not started |
 
@@ -46,6 +46,8 @@ build with the `unixnu` driver of [UniXNU](https://github.com/UniXNU/UniXNU) (th
 | `scripts/build-pdx203-stubs.py`, `package/Pdx203Stubs.c` | weak `native_legacy_display_probe` for a kernel without the sheng display archive |
 | `scripts/build-pdx203-platform-power.py`, `package/Pdx203PlatformPower.cpp` | the original ApplePMGR publication the unchanged amfi needs before a native ufs root |
 | `scripts/build-arm-driver.py` | sheng's platform driver builder with the pdx203 include path |
+| `scripts/check-pdx203.py` | the firmware preflight of uefi-pdx203, run by `unixnu build firmware` |
+| `.github/workflows/macos-kernel.yml` | the kernel step of UniXNU's macos workflow, run from here |
 | `drivers/NativeUfs` | sheng's NativeUfs on the kona gcc offsets, `qcom,sm8250-ufshc`, smmu stream from the adt |
 
 ## build
@@ -60,10 +62,10 @@ from the UniXNU checkout, the device repository next to it:
 ./unixnu build package
 ./unixnu build firmware --uefi ../uefi-pdx203
 ./unixnu build payload --unique-chip-id <hex> --trust-cache <bundle> --data-ramdisk <seed>
-./unixnu bootimg --uefi ../uefi-pdx203 --dtb <kona.dtb>
+python3 ../uefi-pdx203/scripts/pack-pdx203-bootimg.py --fd <SILICIUM_UEFI.fd> --ramdisk out/pdx203/payload/payload.img -o out/pdx203/boot/boot.img
 ```
 
-the platform seed, the trust cache bundle and the data seed are device inputs, [docs/bring-up.md](docs/bring-up.md) says where sheng gets each one. the kernel step runs on macos, without a mac use the [macos runner workflow](https://github.com/chardidathing/UniXNU/actions/workflows/macos.yml) with `device_repository=chardidathing/UniXNU-pdx203`, `defconfig=pdx203_defconfig`, `steps=kernel`.
+the platform seed, the trust cache bundle and the data seed are device inputs, [docs/bring-up.md](docs/bring-up.md) says where sheng gets each one. the kernel step runs on macos, without a mac use the [macOS kernel workflow](https://github.com/chardidathing/UniXNU-pdx203/actions/workflows/macos-kernel.yml) of this repository (the kernel step of UniXNU's `macOS build`) with `defconfig=pdx203_defconfig` and `unixnu_ref=pdx203`, the fork branch with the one-line patch fix upstream main needs (docs/bring-up.md, stage 5).
 
 host checks on linux:
 

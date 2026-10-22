@@ -25,12 +25,17 @@ the stock dtb gives the ufs host no apps smmu stream (mainline sm8250 says 0xe0)
 
 ## stage 1, uefi
 
-owned by uefi-pdx203. what this repository needs from it:
+owned by [uefi-pdx203](https://github.com/chardidathing/uefi-pdx203) (branch `pdx203`, its `docs/pdx203.md` has the port notes). what came over from it is in `board.toml`: the `[firmware]` block, `scripts/check-pdx203.py` (the preflight, wants `UNIXNU_UEFI=<uefi checkout>`) and the boot image rule. the fd loads at `0x9fc00000`, 3 MiB, as on the other kona boards of mu-silicium.
 
-- the `[firmware]` block of `board.toml` (config name, dsc, fd path, preflight, submodules, patches, packages, defines), written to `unixnu/ref/firmware-pdx203.toml` and copied over the placeholder
-- a memory map that keeps `0xffc00000`/`0x100000` reserved (the panic log the kernel maps write-combined) and leaves a conventional run of at least `owned_memory_size` (1 GiB in `board.toml`, 256 MiB is enough for stage 5) for darwinboot
-- the autorefresh and tearcheck kick for the command mode panel, otherwise the gop framebuffer is never scanned out and every later stage is dark
-- whether a header v2 image with an empty dtb field satisfies the abl, or whether the bootimg step needs a dtb field. `[bootimg.image]` carries the verified header values, remove the block if the mu-silicium device config is the authority
+the bootloader has only been seen to boot the stock header v2 layout with the dtb in its own section, which `unixnu bootimg` cannot write (it appends the dtb to the gzip stream), so the flashable image is packed by the uefi checkout:
+
+```sh
+python3 ../uefi-pdx203/scripts/pack-pdx203-bootimg.py --fd ../uefi-pdx203/Build/pdx203Pkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd \
+    --ramdisk out/pdx203/payload/payload.img -o out/pdx203/boot/boot.img
+fastboot flash boot_a out/pdx203/boot/boot.img       # no fastboot boot on this bootloader, keep a copy of the stock boot_a
+```
+
+still to confirm against that port: that its memory map keeps `0xffc00000`/`0x100000` reserved (the panic log the kernel maps write-combined, pass `--no-panic-log` to the adt tool otherwise) and leaves a conventional run of at least `owned_memory_size` (1 GiB in `board.toml`, 256 MiB is enough for stage 5) for darwinboot, and that the autorefresh and tearcheck kick for the command mode panel is in, otherwise the gop framebuffer is never scanned out and every later stage is dark.
 
 expected: the mu-silicium menu on the panel. no uart on this phone, every log is the panel.
 
@@ -65,7 +70,12 @@ the first-console kernel, `configs/pdx203_defconfig`:
 ./unixnu build kernel
 ```
 
-in the workflow: `device_repository=chardidathing/UniXNU-pdx203`, `defconfig=pdx203_defconfig`, `steps=kernel`, no `pre_build`. the driver runs the bootstrap pass for the compile records (its link fails on the display probe reference, which is expected and tolerated), then `scripts/build-pdx203-archives.py` builds corecrypto, ArmDTPlatform, ArmCpu and the display stub, then the real pass links and prelinks against the pinned 21H461 kernelcache.
+in ci, the `macOS kernel` workflow of this repository (`.github/workflows/macos-kernel.yml`, the kernel step of UniXNU's `macOS build` with the same tools and artifact layout): `defconfig=pdx203_defconfig`, `unixnu_repository=chardidathing/UniXNU`, `unixnu_ref=pdx203`, no `pre_build`. green run: https://github.com/chardidathing/UniXNU-pdx203/actions/runs/39767686297, `kernel.macho` sha256 `7e77d7350a395599317cdc2e018ce03055c995385729b7c462242e01dc02895d`, 51802112 bytes, 30 prelinked components. two things about that:
+
+- `unixnu_ref` is the fork's `pdx203` branch, not `main`: upstream UniXNU since `c4af0f0` (the gpu addon mount) sets `BINDM_FORCE_ROOT` in `bind_vfsops.c` without defining it, so a clean tree stops at `bind_vfsops.o`. the branch carries the one-hunk fix in `patches/xnu/zzy-native-gpu-addon-mount.patch` (it belongs upstream)
+- the fork's own `macOS build` workflow (`UniXNU/.github/workflows/macos.yml`) is not registered yet: github lists a fork's workflows only after a push to its default branch, which this port has not done. the `pdx203` branch already carries the comment commit that registers it, `git push origin pdx203:main` on the fork is all it takes, then `gh workflow run macos.yml -R chardidathing/UniXNU -f device_repository=chardidathing/UniXNU-pdx203 -f defconfig=pdx203_defconfig -f steps=kernel` works as documented upstream. the github contents listings `prepare-xnu-source.py` reads are rate limited on the shared runners, the device workflow fetches them with the job token first
+
+locally the driver runs the bootstrap pass for the compile records (its link fails on the display probe reference, which is expected and tolerated), then `scripts/build-pdx203-archives.py` builds corecrypto, ArmDTPlatform, ArmCpu and the display stub, then the real pass links and prelinks against the pinned 21H461 kernelcache.
 
 expected on the panel: the darwinboot green bar, then the xnu banner and the verbose log (`-v`, `-enable_kprintf_spam`), `ArmDTPlatform` publishing the arm-io children, `ArmCpu` registering cpu 0 and taking timer interrupts (`armcpu-diagnostics=1` prints the counts), then the wait for a root device. a panic names the missing provider and stays on the panel (`panic_screen = true`).
 
@@ -94,7 +104,7 @@ mkdir -p out/pdx203/tree/.cache/firmware/kernelcache.macho
 cp "$(find out -name kernelcache.decompressed -print -quit)" out/pdx203/tree/.cache/firmware/kernelcache.macho/kernelcache.release.ipad7.decompressed
 ```
 
-then `defconfig=pdx203-full_defconfig`, `steps=kernel`. the payload for it adds `--kernel-arg native-ufs-root=1 --kernel-arg sheng-pmgr=2`, the payload step refuses `native-ufs-root=1` on a kernel without the linked pmgr publication.
+then `defconfig=pdx203-full_defconfig` with `unixnu_ref=pdx203`. the payload for it adds `--kernel-arg native-ufs-root=1 --kernel-arg sheng-pmgr=2`, the payload step refuses `native-ufs-root=1` on a kernel without the linked pmgr publication.
 
 why the pmgr: `CONFIG_XNU_SHENG_PMGR` links `package/Pdx203PlatformPower.cpp` and the base patch `sheng-platform-power.patch` calls `sheng_pmgr_run()` from `bsd_init`. with `sheng-pmgr=2` it loads the kernelcache's own `com.apple.driver.ApplePMGR`, instantiates the original class with an empty description and publishes an `ApplePMGRNub`, because the unchanged AppleMobileFileIntegrity panics `No PMGR` when it starts without one. nothing in it is sheng hardware, it binds to addresses of the pinned kernelcache, so the pdx203 copy is the sheng source with the file renamed. the names `sheng_pmgr_run` and `sheng-pmgr` are the vocabulary of the base patch and the payload check and stay.
 
