@@ -30,7 +30,7 @@ build with the `unixnu` driver of [UniXNU](https://github.com/UniXNU/UniXNU) (th
 | 3 payload | the payload step runs on a mac, nothing booted yet |
 | 4 darwinboot | nothing booted yet |
 | 5 kernel entry | `pdx203_defconfig` builds and prelinks in the macos workflow, not booted |
-| 6 storage and root | `pdx203-full_defconfig` links NativeUfs on the sm8250 host and the pmgr publication, needs the bootstrap pass first, not booted |
+| 6 storage and root | `pdx203-full_defconfig` links NativeUfs on the sm8250 host and the pmgr publication, needs a first-console pass first, not booted |
 | 7 userland | not started |
 
 ## layout
