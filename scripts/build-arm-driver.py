@@ -13,11 +13,14 @@ parser.add_argument('--negative-aes-kat', action='store_true', help='Isolated ow
 parser.add_argument('--verified-root', action='store_true', help='Authenticate all actual disk reads against an independently signed immutable policy')
 parser.add_argument('--verified-root-bundle', action='store_true', help='Select exactly one capacity-matching policy per device, then independently authenticate it')
 parser.add_argument('--negative-verified-block', action='store_true', help='Negative own-buffer control: corrupt only the completed DMA snapshot')
+parser.add_argument('--unverified', action='store_true', help='NativeUfs: compile the bring-up transport without the verified-root policy bundle')
 args = parser.parse_args()
 if args.verified_root_bundle and not args.verified_root:
     parser.error('A policy bundle requires verified block mode')
 if args.verified_root_bundle and args.negative_verified_block:
     parser.error('Select either bundle policy qualification or the isolated DMA snapshot fault')
+if args.unverified and args.component != 'NativeUfs':
+    parser.error('--unverified applies to the NativeUfs bring-up transport only')
 if (args.verified_root or args.negative_verified_block) and args.component != 'NativeVirtioBlock':
     parser.error('Verified block mode requires the concrete read-only block transport')
 if args.negative_verified_block and not args.verified_root:
@@ -75,8 +78,11 @@ if component in ('NativeVirtioBlock', 'NativeRamBlock', 'NativeUfs'):
     if args.verified_root_bundle:
         command += ['-DNATIVE_VERIFIED_BLOCK_MULTI_POLICY=1']
 if component == 'NativeUfs':
-    command += ['-I', str(ROOT / 'kits/VerifiedRoot/include'), '-I', str(ROOT / 'drivers/NativeVirtioBlock'),
-                '-DNATIVE_VERIFIED_BLOCK=1', '-DNATIVE_VERIFIED_BLOCK_MULTI_POLICY=1', '-mgeneral-regs-only']
+    # the bring-up transport (--unverified) has no verified-root policy bundle to link, the policy is made from the
+    # real os images on a mac and is not part of this port yet
+    command += ['-I', str(ROOT / 'kits/VerifiedRoot/include'), '-I', str(ROOT / 'drivers/NativeVirtioBlock'), '-mgeneral-regs-only']
+    if not args.unverified:
+        command += ['-DNATIVE_VERIFIED_BLOCK=1', '-DNATIVE_VERIFIED_BLOCK_MULTI_POLICY=1']
 if component=='NativeOfflineGPU':
     command += ['-I',str(ROOT/'drivers/NativeVirtioConsole')]
 if component in ('NativeLegacyDisplay','NativeHidInput'):

@@ -11,6 +11,7 @@
 #include <vm/vm_kern.h>
 #include <vm/vm_map.h>
 #include <sys/param.h>
+#include <sys/types.h>
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
 #include "verified_root.h"
 #include "VerifiedBlockPolicy.h"
@@ -1077,29 +1078,45 @@ extern "C" int native_ufs_store_open (uint64_t blocks, uint64_t *firstLba, const
 {
   const char *reason = "";
   int ok = 0;
+  unsigned waited = 0;
   if (!storeMode ()) reason = "off";
-  else if (!gStoreGeometry.valid || !gHost.ready) reason = "no root layout";
-  else if (gStoreRegionBlocks) reason = "already open";
   else {
-    uint64_t partition = gStoreGeometry.last - gStoreGeometry.first + 1;
-    uint64_t imageBlocks = (gStoreGeometry.imageBytes + 4095) / 4096;
-    const uint64_t reserve = reserveBlocks ();
-    if (!blocks || reserve >= partition || blocks > partition - reserve) reason = "size";
-    else if (partition - blocks - reserve < imageBlocks + 1024) reason = "overlaps the root image";
+    // NativeRamBlock attaches the Data seed before the UFS host/root layout is
+    // necessarily published. Wait briefly for the layout so the persistent
+    // window can open; otherwise the Data APFS mount stays read-only and
+    // vm_swap/dyld/shared_region fail before launchd reaches the display.
+    if (storeMode () == 2) {
+      while (waited < 500 && (!gStoreGeometry.valid || !gHost.ready)) {
+        IOSleep (10);
+        ++waited;
+      }
+    }
+    if (!gStoreGeometry.valid || !gHost.ready) reason = "no root layout";
+    else if (gStoreRegionBlocks) reason = "already open";
     else {
-      // The reserve at the end of the partition belongs to the diagnostic log (its last 32 MiB, with the export region below them);
-      // the store ends just below it.
-      uint64_t first = gStoreGeometry.last + 1 - reserve - blocks;
-      if (storeMode () == 2 && !hostStoreOpen (first, blocks)) reason = "window refused";
+      uint64_t partition = gStoreGeometry.last - gStoreGeometry.first + 1;
+      uint64_t imageBlocks = (gStoreGeometry.imageBytes + 4095) / 4096;
+      const uint64_t reserve = reserveBlocks ();
+      if (!blocks || reserve >= partition || blocks > partition - reserve) reason = "size";
+      else if (partition - blocks - reserve < imageBlocks + 1024) reason = "overlaps the root image";
       else {
-        gStoreRegionFirst = first;
-        gStoreRegionBlocks = blocks;
-        if (firstLba) *firstLba = first;
-        ok = 1;
+        // The reserve at the end of the partition belongs to the diagnostic log (its last 32 MiB, with the export region below them);
+        // the store ends just below it.
+        uint64_t first = gStoreGeometry.last + 1 - reserve - blocks;
+        if (storeMode () == 2 && !hostStoreOpen (first, blocks)) reason = "window refused";
+        else {
+          gStoreRegionFirst = first;
+          gStoreRegionBlocks = blocks;
+          if (firstLba) *firstLba = first;
+          ok = 1;
+        }
       }
     }
   }
   if (why) *why = reason;
+  IOLog ("NativeUfs: store open blocks=%llu first=%llx waited=%ums why=%s ok=%d\n",
+      (unsigned long long)blocks, (unsigned long long)(ok && firstLba ? *firstLba : 0),
+      waited * 10, reason, ok);
   return ok;
 }
 
@@ -1338,11 +1355,14 @@ bool NativeUfsBlock::configure (const char *name, uint64_t absoluteOffset, uint6
 
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
 volatile uint64_t native_ufs_verified_blocks = 0;
+volatile uint32_t native_ufs_integrity_failures = 0;
+#endif
 // Time spent hashing/verifying and reading from the UFS transport, in generic-timer ticks (diagnostic only).
+// The read path uses these in every mode, so they live outside the verified block guard.
 volatile uint64_t native_ufs_verify_ticks = 0, native_ufs_read_ticks = 0;
 static inline uint64_t timerTicks (void) {uint64_t v; __asm__ volatile ("isb\n\tmrs %0, cntpct_el0" : "=r" (v)); return v;}
-volatile uint32_t native_ufs_integrity_failures = 0;
 
+#if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
 bool NativeUfsBlock::configureVerification ()
 {
   gRootDiagnostic.stage = "policy selection";
@@ -1572,15 +1592,20 @@ static bool gPendingAttached[4];
 static char gPendingUuid[4][37];
 static UfsRootPlan gPublicationPlan;
 static NativeUfs *gPendingProvider;
+// Bring-up escape hatch: publish the OS/SystemOS windows without the owner
+// policy bundle. The block reads stay unauthenticated; the shipping
+// configuration keeps this false and requires the verified path.
+static bool gAllowUnverifiedRoot;
 
 static bool mediaWithUuidExists (const char *uuid, NativeUfsBlock *window)
 {
+  const bool anyUuid = !uuid || !uuid[0];
   OSDictionary *matching = IOService::serviceMatching ("IOMedia");
-  OSDictionary *properties = OSDictionary::withCapacity (1);
-  OSString *wanted = OSString::withCString (uuid);
+  OSDictionary *properties = anyUuid ? nullptr : OSDictionary::withCapacity (1);
+  OSString *wanted = anyUuid ? nullptr : OSString::withCString (uuid);
   bool found = false;
-  if (matching && properties && wanted && properties->setObject ("UUID", wanted) &&
-      matching->setObject ("IOPropertyMatch", properties)) {
+  if (matching && (anyUuid || (properties && wanted && properties->setObject ("UUID", wanted) &&
+      matching->setObject ("IOPropertyMatch", properties)))) {
     OSIterator *iterator = IOService::getMatchingServices (matching);
     if (iterator) {
       for (unsigned matches = 0; matches < 64 && !found; ++matches) {
@@ -1600,6 +1625,73 @@ static bool mediaWithUuidExists (const char *uuid, NativeUfsBlock *window)
   OSSafeReleaseNULL (properties);
   OSSafeReleaseNULL (matching);
   return found;
+}
+
+// The owner SystemOS mount in kern_exec.c calls these two helpers. The
+// verified VirtIO driver authorizes each volume against the owner policy; this
+// UFS bring-up build accepts only the explicit native-ufs-allow-unverified
+// mode and resolves the published SystemOS volume by its APFS UUID.
+extern "C" int native_verified_block_root_authorized (dev_t device)
+{
+  (void) device;
+  return gAllowUnverifiedRoot ? 1 : 0;
+}
+
+extern "C" int native_verified_block_volume_device (const char *uuid, dev_t *device, char *path, size_t size)
+{
+  if (!uuid || !device || !path || size < 6 || strlen (uuid) != 36) return 0;
+  *device = NODEV;
+  path[0] = 0;
+  if (!gAllowUnverifiedRoot) return 0;
+  // The APFS volume media appears asynchronously after the root window starts.
+  // launchd is loaded immediately after root mount, so wait for the volume.
+  for (unsigned attempt = 0; attempt < 100; ++attempt) {
+    OSDictionary *matching = IOService::serviceMatching ("IOMedia");
+    OSDictionary *properties = OSDictionary::withCapacity (1);
+    OSString *wanted = OSString::withCString (uuid);
+    bool ready = matching && properties && wanted && properties->setObject ("UUID", wanted) &&
+                 matching->setObject ("IOPropertyMatch", properties);
+    OSSafeReleaseNULL (wanted);
+    OSSafeReleaseNULL (properties);
+    OSIterator *iterator = ready ? IOService::getMatchingServices (matching) : nullptr;
+    OSSafeReleaseNULL (matching);
+    dev_t candidate = NODEV;
+    char candidatePath[64] = {};
+    unsigned matches = 0;
+    bool found = false;
+    while (iterator) {
+      OSObject *object = iterator->getNextObject ();
+      if (!object) break;
+      IOService *media = OSDynamicCast (IOService, object);
+      if (!media) continue;
+      if (++matches != 1) {
+        found = false;
+        break;
+      }
+      OSString *identity = OSDynamicCast (OSString, media->getProperty ("UUID"));
+      OSString *name = OSDynamicCast (OSString, media->getProperty (kIOBSDNameKey));
+      OSNumber *mjr = OSDynamicCast (OSNumber, media->getProperty (kIOBSDMajorKey));
+      OSNumber *mnr = OSDynamicCast (OSNumber, media->getProperty (kIOBSDMinorKey));
+      if (!identity || strcmp (identity->getCStringNoCopy (), uuid) || !name || !mjr || !mnr ||
+          !name->getLength () || name->getLength () >= sizeof (candidatePath) - 6 ||
+          name->getLength () >= size - 6 || mjr->unsigned64BitValue () > 255 ||
+          mnr->unsigned64BitValue () > 0xffffff) {
+        continue;
+      }
+      candidate = static_cast<dev_t> (makedev (mjr->unsigned32BitValue (), mnr->unsigned32BitValue ()));
+      if (!native_verified_block_root_authorized (candidate)) continue;
+      snprintf (candidatePath, sizeof (candidatePath), "/dev/%s", name->getCStringNoCopy ());
+      found = true;
+    }
+    OSSafeReleaseNULL (iterator);
+    if (found && matches == 1) {
+      *device = candidate;
+      strlcpy (path, candidatePath, size);
+      return 1;
+    }
+    IOSleep (100);
+  }
+  return 0;
 }
 
 static void captureMissingMedia (const char *uuid)
@@ -1759,9 +1851,11 @@ static void mediaReportThread (void *, wait_result_t)
 
 bool NativeUfs::start (IOService *provider)
 {
-  unsigned probe = 0, rootMode = 0;
+  unsigned probe = 0, rootMode = 0, allowUnverified = 0;
   PE_parse_boot_argn ("native-ufs-probe", &probe, sizeof (probe));
   PE_parse_boot_argn ("native-ufs-root", &rootMode, sizeof (rootMode));
+  PE_parse_boot_argn ("native-ufs-allow-unverified", &allowUnverified, sizeof (allowUnverified));
+  gAllowUnverifiedRoot = allowUnverified == 1;
   native_ufs_probe_requested = probe != 0;
   // Default: match for observability only, never touch the controller. Hardware work runs once,
   // from the root-device personality; the ufshc nub match stays observation-only.
@@ -1952,7 +2046,14 @@ bool NativeUfs::startRoot (IOService *provider)
       }
       return true;
 #else
-      return false; // Root publication requires owner verification in every build.
+      if (!gAllowUnverifiedRoot) {
+        return false; // Root publication requires owner verification in every build.
+      }
+      // Bring-up only: ufsBuildRootPlan already required distinct OS/SystemOS
+      // labels. Leave the UUIDs empty so the publisher waits for any media
+      // descendant of each window instead of a signed volume identity.
+      for (unsigned i = 0; i < gPending; ++i) gPendingUuid[i][0] = 0;
+      return true;
 #endif
     }
     bool schedule () {

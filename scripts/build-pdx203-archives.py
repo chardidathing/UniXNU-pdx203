@@ -30,7 +30,10 @@ def main():
     if on('NATIVE_AES'):
         steps += [['build-arm-driver.py', 'NativeAES'], ['build-native-aes-bindings.py']]
     if on('NATIVE_UFS'):
-        steps += [['prepare-storage-headers.py'], ['build-arm-driver.py', 'NativeUfs']]
+        # the bring-up transport without the verified-root policy bundle, bound to the original
+        # IOBlockStorageDevice of the prelinked candidate (docs/bring-up.md, stage 6)
+        steps += [['prepare-storage-headers.py'], ['build-arm-driver.py', 'NativeUfs', '--unverified'],
+                  ['build-ufs-original-bindings.py', '--candidate', 'build/native-prelink/native-defaults-candidate.macho']]
     if on('NATIVE_VIRTIO_BLOCK'):
         steps += [['build-arm-driver.py', 'NativeVirtioBlock'], ['build-native-virtio-bindings.py', '--component', 'NativeVirtioBlock']]
     if on('NATIVE_RAM_BLOCK'):
