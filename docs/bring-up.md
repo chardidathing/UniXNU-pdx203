@@ -79,10 +79,10 @@ secondary cores: `cpu_regs` lists all eight, ArmCpu starts them only with `sheng
 
 ## stage 6, storage and root
 
-the stage 6 kernel, `configs/pdx203-full_defconfig`, adds NativeUfs (drivers/NativeUfs, the sm8250 variant), NativeAES with the recorded original bindings, mockfs, source pthread and the original ApplePMGR publication. two of its builders read a prelinked candidate of the pinned kernelcache, so the bootstrap pass has to run first and leave its kernel where they look, the way the uke workflow does it. in the macos workflow that is the `pre_build` input:
+the stage 6 kernel, `configs/pdx203-full_defconfig`, adds NativeUfs (drivers/NativeUfs, the sm8250 variant), NativeAES with the recorded original bindings, mockfs, source pthread and the original ApplePMGR publication. two of its builders read a prelinked candidate of the pinned kernelcache, so a first-console build has to run first and leave its kernel where they look, the way the uke workflow does it with its bootstrap pass (a kernel with no archive at all does not link on the stock tree, the display probe reference again, so the first-console configuration is the candidate producer here). in the device workflow that is the `pre_build` input:
 
 ```sh
-./unixnu defconfig bootstrap_defconfig -D "$DEVICE_DIR"
+./unixnu defconfig pdx203_defconfig -D "$DEVICE_DIR"
 ./unixnu build kernel -D "$DEVICE_DIR"
 mkdir -p out/pdx203/tree/build/native-prelink
 for name in native-defaults native-owner-ufs-cpu-desktop-v9-hid-init; do
@@ -90,6 +90,8 @@ for name in native-defaults native-owner-ufs-cpu-desktop-v9-hid-init; do
   cp out/pdx203/kernel/kernel.json out/pdx203/tree/build/native-prelink/$name-candidate.json
 done
 rm -f out/pdx203/kernel/kernel.macho out/pdx203/kernel/kernel.json
+mkdir -p out/pdx203/tree/.cache/firmware/kernelcache.macho
+cp "$(find out -name kernelcache.decompressed -print -quit)" out/pdx203/tree/.cache/firmware/kernelcache.macho/kernelcache.release.ipad7.decompressed
 ```
 
 then `defconfig=pdx203-full_defconfig`, `steps=kernel`. the payload for it adds `--kernel-arg native-ufs-root=1 --kernel-arg sheng-pmgr=2`, the payload step refuses `native-ufs-root=1` on a kernel without the linked pmgr publication.

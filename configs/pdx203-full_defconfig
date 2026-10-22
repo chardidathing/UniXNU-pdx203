@@ -2,7 +2,7 @@
 # (drivers/NativeUfs), the aes accelerator with the recorded original bindings, mockfs, source pthread and
 # the original ApplePMGR publication (package/Pdx203PlatformPower.cpp) that the unchanged amfi needs before
 # a native ufs root. the pmgr and aes builders read a prelinked candidate, so this configuration needs the
-# bootstrap pass first (docs/bring-up.md, "stage 6 kernel"), it does not build from a clean tree alone.
+# first-console pass first (docs/bring-up.md, "stage 6 kernel"), it does not build from a clean tree alone.
 #
 # the hardware qualification gates stay off, as on uke: NATIVE_VIRTIO_BLOCK and NATIVE_RAM_BLOCK need a live
 # storage abi snapshot, VERIFIED_ROOT_PROBE, OWNER_ROOT_AUDIT and OWNER_ROOT_TRUST need the signed policy

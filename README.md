@@ -38,9 +38,8 @@ build with the `unixnu` driver of [UniXNU](https://github.com/UniXNU/UniXNU) (th
 | path | contents |
 | --- | --- |
 | `board.toml` | board, ipsw, userdata geometry, prelink inputs, payload and adt options |
-| `configs/bootstrap_defconfig` | no device archive, leaves the compile records and a prelinked candidate |
 | `configs/pdx203_defconfig` | first-console kernel, platform expert, cpu driver, 4 KiB code signing, panic region |
-| `configs/pdx203-full_defconfig` | stage 6 kernel, adds NativeUfs, NativeAES, mockfs, pthread and the pmgr publication |
+| `configs/pdx203-full_defconfig` | stage 6 kernel, adds NativeUfs, NativeAES, mockfs, pthread and the pmgr publication, built after a first-console pass |
 | `scripts/make-pdx203-adt.py` | the apple device tree of the phone |
 | `scripts/check-host.py` | linux side checks: board file, defconfigs, scripts, the adt and its contract |
 | `scripts/build-pdx203-archives.py` | the one archive builder board.toml lists, picks the builders from the selected flags |
