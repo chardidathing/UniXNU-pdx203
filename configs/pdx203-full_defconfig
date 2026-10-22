@@ -1,0 +1,44 @@
+# stage 6 kernel of pdx203 (storage and root): the first-console set plus NativeUfs on the sm8250 host
+# (drivers/NativeUfs), the aes accelerator with the recorded original bindings, mockfs, source pthread and
+# the original ApplePMGR publication (package/Pdx203PlatformPower.cpp) that the unchanged amfi needs before
+# a native ufs root. the pmgr and aes builders read a prelinked candidate, so this configuration needs the
+# bootstrap pass first (docs/bring-up.md, "stage 6 kernel"), it does not build from a clean tree alone.
+#
+# the hardware qualification gates stay off, as on uke: NATIVE_VIRTIO_BLOCK and NATIVE_RAM_BLOCK need a live
+# storage abi snapshot, VERIFIED_ROOT_PROBE, OWNER_ROOT_AUDIT and OWNER_ROOT_TRUST need the signed policy
+# bundle made from the real OS/SystemOS images, the OWNER_* mounts follow from that path, BOOT_PROGRESS is
+# refused by the base build without the audited set, and NATIVE_ADRENO is the adreno 650 port, not done.
+
+CONFIG_XNU_BUILD_ARCHIVES=y
+CONFIG_XNU_SOURCE_CORECRYPTO14=y
+CONFIG_XNU_SOURCE_PTHREAD=y
+CONFIG_XNU_ARM_DT_PLATFORM=y
+CONFIG_XNU_ARMCPU=y
+CONFIG_XNU_NATIVE_UFS=y
+CONFIG_XNU_NATIVE_AES=y
+CONFIG_XNU_TRUST_CACHE_RUNTIME=y
+CONFIG_XNU_SOURCE_MOCKFS=y
+CONFIG_XNU_NATIVE_CS_HASH_CACHE=y
+CONFIG_XNU_SHENG_PMGR=y
+CONFIG_XNU_DT_PANIC_REGION=y
+CONFIG_XNU_ZONE_PGZ_ALIGNMENT_PROBE=y
+CONFIG_XNU_NATIVE_ARCH_TIMER=y
+CONFIG_XNU_NATIVE_PAN=y
+CONFIG_XNU_CRYPTO_BOOTSTRAP="prelinked"
+CONFIG_XNU_EXTRA_LD_ARCHIVES="{tree}/build/pdx203-stubs/libPdx203Stubs.a"
+
+# CONFIG_XNU_NATIVE_LEGACY_DISPLAY is not set
+# CONFIG_XNU_NATIVE_VIRTIO_BLOCK is not set
+# CONFIG_XNU_NATIVE_RAM_BLOCK is not set
+# CONFIG_XNU_VERIFIED_ROOT_PROBE is not set
+# CONFIG_XNU_OWNER_ROOT_AUDIT is not set
+# CONFIG_XNU_OWNER_ROOT_TRUST is not set
+# CONFIG_XNU_OWNER_CACHE_MOUNT is not set
+# CONFIG_XNU_OWNER_CACHE_STARTUP is not set
+# CONFIG_XNU_OWNER_BOOT_MANIFEST is not set
+# CONFIG_XNU_OWNER_DATA_MOUNT is not set
+# CONFIG_XNU_OWNER_UNION_SYSTEMOS is not set
+# CONFIG_XNU_BOOT_PROGRESS is not set
+# CONFIG_XNU_NATIVE_ADRENO is not set
+CONFIG_XNU_NATIVE_MOBILE_DISPLAY=n
+CONFIG_XNU_ARMVIRT_PLATFORM=n

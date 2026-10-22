@@ -1,0 +1,43 @@
+# first-console kernel of pdx203 (stages 4 and 5 of docs/bring-up.md): source corecrypto, the generic
+# platform expert, the gic/timer cpu driver, 4 KiB code signing, the trust cache runtime and the device tree
+# panic region. no storage, display, gpu or owner-root stack yet, so the kernel reaches the platform expert and
+# then waits for a root device. it builds from the pinned sources alone, through the stock macos workflow.
+# CONFIG_XNU_<NAME> becomes XNU_<NAME> for the kernel build.
+
+CONFIG_XNU_BUILD_ARCHIVES=y
+CONFIG_XNU_SOURCE_CORECRYPTO14=y
+CONFIG_XNU_ARM_DT_PLATFORM=y
+CONFIG_XNU_ARMCPU=y
+CONFIG_XNU_NATIVE_ARCH_TIMER=y
+CONFIG_XNU_NATIVE_PAN=y
+CONFIG_XNU_DT_PANIC_REGION=y
+CONFIG_XNU_TRUST_CACHE_RUNTIME=y
+CONFIG_XNU_NATIVE_CS_HASH_CACHE=y
+CONFIG_XNU_CRYPTO_BOOTSTRAP="prelinked"
+
+# the base patch set calls native_legacy_display_probe() from bsd_init even with the legacy display off, so a
+# kernel without the sheng display archive needs the weak stub (package/Pdx203Stubs.c, built by the dispatcher)
+CONFIG_XNU_EXTRA_LD_ARCHIVES="{tree}/build/pdx203-stubs/libPdx203Stubs.a"
+
+# CONFIG_XNU_SOURCE_PTHREAD is not set
+# CONFIG_XNU_SOURCE_MOCKFS is not set
+# CONFIG_XNU_NATIVE_UFS is not set
+# CONFIG_XNU_NATIVE_AES is not set
+# CONFIG_XNU_NATIVE_RAM_BLOCK is not set
+# CONFIG_XNU_NATIVE_VIRTIO_BLOCK is not set
+# CONFIG_XNU_NATIVE_VIRTIO_CONSOLE is not set
+# CONFIG_XNU_SHENG_PMGR is not set
+# CONFIG_XNU_NATIVE_LEGACY_DISPLAY is not set
+# CONFIG_XNU_NATIVE_ADRENO is not set
+# CONFIG_XNU_ZONE_PGZ_ALIGNMENT_PROBE is not set
+# CONFIG_XNU_VERIFIED_ROOT_PROBE is not set
+# CONFIG_XNU_OWNER_ROOT_AUDIT is not set
+# CONFIG_XNU_OWNER_ROOT_TRUST is not set
+# CONFIG_XNU_OWNER_CACHE_MOUNT is not set
+# CONFIG_XNU_OWNER_CACHE_STARTUP is not set
+# CONFIG_XNU_OWNER_BOOT_MANIFEST is not set
+# CONFIG_XNU_OWNER_DATA_MOUNT is not set
+# CONFIG_XNU_OWNER_UNION_SYSTEMOS is not set
+# CONFIG_XNU_BOOT_PROGRESS is not set
+CONFIG_XNU_NATIVE_MOBILE_DISPLAY=n
+CONFIG_XNU_ARMVIRT_PLATFORM=n

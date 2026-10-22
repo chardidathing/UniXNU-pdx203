@@ -1,0 +1,174 @@
+# board description of the sony xperia 1 ii (pdx203, sm8250 "kona"), read by the unixnu build driver.
+# values marked verified were observed on the phone by the ios-sweet port, the rest come from the stock
+# kona dtb and sony's kernel source. docs/bring-up.md keeps the list.
+
+[board]
+name = "pdx203"
+soc = "SM8250"
+description = "Sony Xperia 1 II"
+kit = "pdx203"                     # package/ of this repository appears as kits/pdx203 in the build tree
+
+# the target os image: the unchanged iPad7,1 iPadOS 17.7.11 restore image, the same identity sheng and uke
+# use (no pac on the a77, so the arm64 ipad userland, not an arm64e iphone one). --ipsw PATH uses a local file.
+[ipsw]
+url = "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
+product = "iPad7,1"
+version = "17.7.11"
+build = "21H461"
+device_class = "j120ap"
+chip_id = 0x8011
+board_id = 12
+fetch = ["KernelCache", "DeviceTree", "StaticTrustCache", "Cryptex1,SystemTrustCache"]
+
+[ipsw.sha256]
+"044-76040-038.dmg" = "3f99b859c9728379110b66657c7b15285bcb1925ad8b5726542e2cdcf8b1028d"
+"044-76034-038.dmg" = "b4908cde41d23e6bc05e6af51a2c9eeb00cf0f863a6a18b1600c96a3fd70414f"
+
+# the raw image for the userdata partition (lun 0, 4096-byte lbas, 91 gpt entries, disk last lba 0x3b947ff).
+# first_lba is the "userdata" gpt entry as the ios-sweet ufs driver printed it on the phone, last_lba follows
+# from the same boot log (the persistent log sits in the last 1025 blocks, at 0x3b92ffa), so both are from
+# the phone, not from a gpt dump. 228444 MiB, ~223 GiB, plenty for the two windows.
+[userdata]
+first_lba = 0x3cd75b
+last_lba = 0x3b933fa
+lba_bytes = 4096
+windows = [
+  { name = "OS", component = "OS" },
+  { name = "SystemOS", component = "Cryptex1,SystemOS" },
+]
+
+[kernel]
+defconfig = "pdx203_defconfig"
+# one dispatcher instead of a fixed list, it reads the XNU_* flags of the selected defconfig from its
+# environment and runs only the builders that configuration links (scripts/build-pdx203-archives.py).
+# it runs when the defconfig sets CONFIG_XNU_BUILD_ARCHIVES, after the bootstrap pass left the compile records.
+archives = [
+  "build-pdx203-archives.py",
+]
+
+[kernel.prelink]
+tool = "kits/NativePrelink/emit_prelink.py"
+kernel = "build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped.noctf"
+kernelcache_sha256 = "f18b4df865405f2a287b84977d7aca745e056d656d9fc9df1662970ce2969de7"
+slide = "-0x1000000"
+early_security_init = "com.apple.driver.AppleMobileFileIntegrity=0xfffffff005ab4ae0"
+# same component set as sheng: the pmgr integration and the aes bindings are qualified against these addresses
+roots = [
+  "com.apple.AppleFSCompression.AppleFSCompressionTypeZlib",
+  "com.apple.driver.AppleARMPlatform",
+  "com.apple.driver.AppleARMWatchdogTimer",
+  "com.apple.driver.AppleAudioClockLibs",
+  "com.apple.driver.AppleEffaceableStorage",
+  "com.apple.driver.AppleIISController",
+  "com.apple.driver.AppleM2ScalerCSCDriver",
+  "com.apple.driver.AppleMobileFileIntegrity",
+  "com.apple.driver.ApplePMGR",
+  "com.apple.driver.IODARTFamily",
+  "com.apple.filesystems.apfs",
+  "com.apple.iokit.CoreAnalyticsFamily",
+  "com.apple.iokit.IOAVFamily",
+  "com.apple.iokit.IOAudio2Family",
+  "com.apple.iokit.IOCECFamily",
+  "com.apple.iokit.IOCryptoAcceleratorFamily",
+  "com.apple.iokit.IOGPUFamily",
+  "com.apple.iokit.IOHDCPFamily",
+  "com.apple.iokit.IOMobileGraphicsFamily",
+  "com.apple.iokit.IOReportFamily",
+  "com.apple.iokit.IOSlowAdaptiveClockingFamily",
+  "com.apple.iokit.IOStorageFamily",
+  "com.apple.iokit.IOSurface",
+  "com.apple.kec.Libm",
+  "com.apple.kec.corecrypto",
+  "com.apple.kext.AppleMatch",
+  "com.apple.kext.CoreTrust",
+  "com.apple.security.AppleImage4",
+  "com.apple.security.sandbox",
+  "com.apple.iokit.IOHIDFamily",
+  "com.apple.iokit.IOHIDEventDriver",
+]
+
+# PLACEHOLDER: the mu-silicium port (chardidathing/uefi-pdx203) is being written in parallel and had not
+# published its device config when this file was written. the names follow the kona siblings in that tree
+# (Platforms/OnePlus/kebabPkg, Platforms/Xiaomi/aliothPkg) and sheng's package list. replace this block with
+# the [firmware] block the uefi port hands over (unixnu/ref/firmware-pdx203.toml) before "unixnu build firmware".
+[firmware]
+config = "pdx203"                  # Resources/Configs/pdx203.toml in the mu-silicium checkout (--uefi)
+dsc = "Platforms/Sony/pdx203Pkg/pdx203.dsc"
+fd = "Build/pdx203Pkg/{target}_CLANGPDB/FV/SILICIUM_UEFI.fd"
+preflight = []
+submodules = ["Common/Mu", "Common/Mu_OEM_Sample", "Silicium-ACPI", "Silicon/Silicium/OpensslPkg/Library/OpensslLib/openssl"]
+patches = ["Resources/MuPatches/Gic-Spurious.patch"]
+packages = [
+  "{uefi}",
+  "{uefi}/Platforms/Sony",
+  "{tree}/package",
+  "{tree}/drivers/DarwinBoot",
+  "{edk2}",
+  "{uefi}/Common/Mu",
+  "{uefi}/Common/Mu_OEM_Sample",
+  "{uefi}/Silicon/Qualcomm",
+  "{uefi}/Silicon/Silicium",
+  "{uefi}/Silicium-ACPI",
+  "{uefi}/Silicium-ACPI/Platforms/Sony",
+  "{uefi}/Silicium-ACPI/Silicon/Qualcomm",
+]
+
+[firmware.defines]
+ENABLE_SECUREBOOT = "1"
+DEVICE_MODEL = "pdx203"
+MEMORY_PROTECTION = "TRUE"
+SHIP_MODE = "FALSE"
+BUILDID_STRING = "pdx203-research"
+
+# the android boot image sony's abl accepts (verified by the android and ios-sweet ports): header v2, page 4096,
+# kernel 0x8000, ramdisk 0x2000000, tags 0x1e00000, dtb 0x1f00000, the kona dtb set in the dtb field. the
+# bootimg step only appends the dtb to the gzip stream and has no dtb field, so whether a v2 header with an
+# empty dtb field satisfies this abl is for the uefi port to settle (the mu-silicium device config wins when
+# this block is removed). there is no fastboot boot on this bootloader, the image is flashed to boot_a.
+[bootimg.image]
+header_version = 2
+base = 0x0
+kernel_offset = 0x8000
+tags_offset = 0x1e00000
+pagesize = 4096
+
+# the ramdisk of the boot image: a fat volume with the unixnu config, the kernel, its device tree and the
+# optional trust cache and data seed. darwinboot is part of the firmware volume.
+[payload]
+volume = "PDX203ESP"
+size_mib = 192
+loader = "firmware"
+title = "pdx203 first boot: source 4K XNU to console"
+dram_size = "0xfcc00000"           # the upper ddr bank, 0x1_00000000 + 0xfcc00000, verified as xnu's ram by ios-sweet
+skip_setup_tool = "scripts/seed-data-skip-setup.py"
+panic_screen = true                # the panic text stays on the panel, there is no uart on this phone
+# the original static/System trust caches of the ipsw and the owner bundle built around them, as sheng accepts them
+trust_cache_sha256 = [
+  "7416ca4f8377146626bb284e2133c76bee6cb4e3ee0af5d648b186235a7323a7",
+  "8900d6a93d7a59ce1a872a5c081e559f4240a218f97e12d44d22dda46644d68f",
+]
+# the first-console set. stage 6 adds native-ufs-root=1 and sheng-pmgr=2 with --kernel-arg (docs/bring-up.md),
+# they need the pdx203-full kernel and the payload step refuses them on the first-console one.
+kernel_args = [
+  "-v",
+  "serial=3",
+  "debug=0x14e",
+  # development kernels keep kprintf quiet unless this is set, and with no uart the framebuffer console
+  # is the only place the early log goes
+  "-enable_kprintf_spam",
+  "kt_fixed_zones=120",
+  "armcpu-diagnostics=1",
+  "-no_slto_panic",
+  "ml-timeout-lock-panic-scale=40",
+]
+
+[payload.adt]
+tool = "scripts/make-pdx203-adt.py"
+chip_id = "207"
+owned_memory_size = "0x40000000"   # 1 GiB window request, lower it to 0x10000000 if darwinboot finds no run that large
+root_match_volume_uuid = "04769D26-2CA0-4825-B443-E2E5F88300F2"   # the OS volume of the 21H461 ipad7,1 image, as on sheng
+cpu_regs = "0,0x100,0x200,0x300,0x400,0x500,0x600,0x700"   # mpidr aff1 numbering, verified by ios-sweet with cpus=8
+psci_method = "smc"
+packed_data_ramdisk = true
+ipad_identity = true
+unique_chip_id = "required"        # the platform seed is not stored in any repository
