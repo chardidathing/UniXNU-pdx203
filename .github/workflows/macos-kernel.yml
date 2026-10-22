@@ -114,6 +114,9 @@ jobs:
           path: |
             out/*/kernel/**
             out/*/logs/**
+            out/*/tree/build/*/compile.log
+            out/*/tree/build/*/build-report.json
+            out/*/tree/build/*/bindings.json
           if-no-files-found: error
           retention-days: 7
 
