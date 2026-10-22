@@ -87,15 +87,14 @@ roots = [
   "com.apple.iokit.IOHIDEventDriver",
 ]
 
-# PLACEHOLDER: the mu-silicium port (chardidathing/uefi-pdx203) is being written in parallel and had not
-# published its device config when this file was written. the names follow the kona siblings in that tree
-# (Platforms/OnePlus/kebabPkg, Platforms/Xiaomi/aliothPkg) and sheng's package list. replace this block with
-# the [firmware] block the uefi port hands over (unixnu/ref/firmware-pdx203.toml) before "unixnu build firmware".
+# the mu-silicium port, chardidathing/uefi-pdx203 branch pdx203 (--uefi DIR), its docs/pdx203.md has the port notes.
+# the block is the one that port hands over (unixnu/ref/firmware-pdx203.toml). the preflight runs from the build tree,
+# scripts/check-pdx203.py is its copy and wants UNIXNU_UEFI=<uefi checkout>.
 [firmware]
-config = "pdx203"                  # Resources/Configs/pdx203.toml in the mu-silicium checkout (--uefi)
+config = "pdx203"                  # Resources/Configs/pdx203.toml in the uefi checkout
 dsc = "Platforms/Sony/pdx203Pkg/pdx203.dsc"
 fd = "Build/pdx203Pkg/{target}_CLANGPDB/FV/SILICIUM_UEFI.fd"
-preflight = []
+preflight = ["scripts/check-pdx203.py"]
 submodules = ["Common/Mu", "Common/Mu_OEM_Sample", "Silicium-ACPI", "Silicon/Silicium/OpensslPkg/Library/OpensslLib/openssl"]
 patches = ["Resources/MuPatches/Gic-Spurious.patch"]
 packages = [
@@ -109,28 +108,23 @@ packages = [
   "{uefi}/Silicon/Qualcomm",
   "{uefi}/Silicon/Silicium",
   "{uefi}/Silicium-ACPI",
-  "{uefi}/Silicium-ACPI/Platforms/Sony",
   "{uefi}/Silicium-ACPI/Silicon/Qualcomm",
 ]
 
 [firmware.defines]
-ENABLE_SECUREBOOT = "1"
+ENABLE_SECUREBOOT = "0"            # keeps unsigned payload drivers loadable during bring-up, the mu default
 DEVICE_MODEL = "pdx203"
 MEMORY_PROTECTION = "TRUE"
 SHIP_MODE = "FALSE"
 BUILDID_STRING = "pdx203-research"
 
-# the android boot image sony's abl accepts (verified by the android and ios-sweet ports): header v2, page 4096,
-# kernel 0x8000, ramdisk 0x2000000, tags 0x1e00000, dtb 0x1f00000, the kona dtb set in the dtb field. the
-# bootimg step only appends the dtb to the gzip stream and has no dtb field, so whether a v2 header with an
-# empty dtb field satisfies this abl is for the uefi port to settle (the mu-silicium device config wins when
-# this block is removed). there is no fastboot boot on this bootloader, the image is flashed to boot_a.
+# the bootloader has only been seen to boot the stock header v2 layout (page 4096, kernel 0x8000, ramdisk 0x2000000, tags
+# 0x1e00000, dtb 0x1f00000, the kona dtb set in the dtb section, flashed to boot_a, no fastboot boot). "unixnu bootimg"
+# appends the dtb to the gzip stream and cannot write a dtb section, so the flashable image comes from the uefi checkout:
+#   python3 <uefi>/scripts/pack-pdx203-bootimg.py --fd <fd> --ramdisk out/pdx203/payload/payload.img -o out/pdx203/boot/boot.img
+# this override keeps the driver's own packing a valid v1 container should it be wanted anyway.
 [bootimg.image]
-header_version = 2
-base = 0x0
-kernel_offset = 0x8000
-tags_offset = 0x1e00000
-pagesize = 4096
+header_version = 1
 
 # the ramdisk of the boot image: a fat volume with the unixnu config, the kernel, its device tree and the
 # optional trust cache and data seed. darwinboot is part of the firmware volume.
